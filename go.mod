@@ -1,4 +1,4 @@
-module github.com/simplefelix/util
+module github.com/simplefelix/u
 
 go 1.18
 

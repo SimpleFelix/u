@@ -1,4 +1,4 @@
-module codenai.com/xuefei/util
+module github.com/simplefelix/util
 
 go 1.18
 

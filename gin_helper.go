@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const TraceIDKey = "TraceID"
+const TraceIDKey = "TID"
 
 func traceIDForGinCreateIfNil(c *gin.Context) (traceID string) {
 	if c == nil {
@@ -37,7 +37,7 @@ func traceIDForGinCreateIfNil(c *gin.Context) (traceID string) {
 	return traceID
 }
 
-func traceIDForGC(c *gin.Context) (traceID string) {
+func traceIDFromGin(c *gin.Context) (traceID string) {
 	value, ok := c.Get(TraceIDKey)
 	if ok {
 		traceID, _ = value.(string)
@@ -64,9 +64,9 @@ func (h GinHelper) Ctx() *CTX {
 }
 
 type ErrorPayload struct {
-	Code    interface{} `json:"code,omitempty"`
-	Desc    string      `json:"desc"`
-	TraceID string      `json:"trace_id,omitempty"`
+	Code interface{} `json:"code,omitempty"`
+	Desc string      `json:"desc"`
+	TID  string      `json:"tid,omitempty"`
 }
 
 type KV = map[string]interface{}
@@ -123,13 +123,14 @@ func respondJSON(c *gin.Context, status int, body interface{}) {
 
 // Respond Example: playload1 is {k: "msg" v: "ok"} and payload2 is {k: "data" v:{id: 1}}.
 // Response JSON will be
-//{
-//	"error": null,
-//	"msg": "ok",
-//	"data": {
-//		"id": 1
+//
+//	{
+//		"error": null,
+//		"msg": "ok",
+//		"data": {
+//			"id": 1
+//		}
 //	}
-//}
 func (h GinHelper) Respond(status int, payload KV) {
 	body := commonResponseBody()
 	for k, v := range payload {
@@ -163,7 +164,7 @@ func respondError(gc *gin.Context, erro ErrorType) {
 		if reflect.TypeOf(erro).Name() == "u_internalError" {
 			// We are here only because first recovery panicked.
 			// Even below lines still panic. http.serve() will recover. Thus, service won't crash.
-			Errorf("[%s] respondError panicked twice. erro={type=%T; value=%v}", traceIDForGC(gc), erro, erro)
+			Errorf("[%s] respondError panicked twice. erro={type=%T; value=%v}", traceIDFromGin(gc), erro, erro)
 			gc.Abort()
 			return
 		}
@@ -182,14 +183,14 @@ func respondError(gc *gin.Context, erro ErrorType) {
 		Desc: erro.Error(),
 	}
 
-	payload.TraceID = traceIDForGinCreateIfNil(gc)
+	payload.TID = traceIDForGinCreateIfNil(gc)
 	body[errorKey] = payload
 
 	if erro.Extra() != NotWorthLogging {
 		// get raw string of http request using reflect.
 		requestLog := requestAsText(gc.Request)
 
-		log := fmt.Sprintf("trace_id=%v; %scode=%v; error=%v; status=%v", payload.TraceID, requestLog, erro.ErrorCode(), erro.Error(), erro.StatusCode())
+		log := fmt.Sprintf("tid=%v; %scode=%v; error=%v; status=%v", payload.TID, requestLog, erro.ErrorCode(), erro.Error(), erro.StatusCode())
 
 		if erro.StatusCode() >= 500 && erro.Extra() != PrintErrAsInfo {
 			Error(log)
@@ -263,7 +264,7 @@ func (h GinHelper) RespondKVs200(erro ErrorType, payload KV) {
 }
 
 // RespondFirst caller provide an slice/array. Only the first element if exists will be in the response JSON.
-//todo generic
+// todo generic
 func (h GinHelper) RespondFirst(successStatusCode int, key string, values interface{}, erro ErrorType) {
 	if erro != nil {
 		h.RespondError(erro)
@@ -340,13 +341,13 @@ func handlePanic(c *gin.Context) {
 		} else {
 			respondError(c, ErrAnyError(err))
 			c.Abort()
-			//Errorf("Gin catched a panic. traceID=%s; error=%v", traceIDForGC(c), err)
+			//Errorf("Gin catched a panic. traceID=%s; error=%v", traceIDFromGin(c), err)
 			//c.AbortWithStatus(http.StatusInternalServerError)
 		}
 	}
 }
 
-// CreateGRPCContext create a context.Context with header "trace_id".
+// CreateGRPCContext create a context.Context with header "tid".
 func (h GinHelper) CreateGRPCContext() context.Context {
 	context := context.Background()
 	return h.Ctx().FillGRPCContext(context)

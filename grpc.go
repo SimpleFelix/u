@@ -21,7 +21,7 @@ func GRPCClientZapLogOption() grpc_zap.Option {
 			zap.Error(err),
 			zap.String("grpc.code", code.String()),
 			duration,
-			zap.String("trace_id", traceID),
+			zap.String("tid", traceID),
 		)
 	})
 }
@@ -35,7 +35,7 @@ func GRPCServerZapLogOption() grpc_zap.Option {
 			zap.Error(err),
 			zap.String("grpc.code", code.String()),
 			duration,
-			zap.String("trace_id", traceID),
+			zap.String("tid", traceID),
 		)
 	})
 }

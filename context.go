@@ -9,12 +9,12 @@ import (
 
 // CTX is short for Context. Name is different from context.Context or gin.Context for preventing confusion.
 type CTX struct {
-	// traceID could be used for tracing in one service call life-time even across services.
-	// Try to print log with a traceID for log-tracing convenience.
+	// traceID could be used for tracing call chain through services.
+	// Developer should try to put value of traceID in log.
 	traceID     string
 	traceIDOnce sync.Once
 
-	// Sometimes, developer just hard to make a decision to choose between panic and return-error.
+	// Sometimes developer feels difficult to choose between panic and return-error.
 	// In this case, try using PoR or PoRErr.
 	// PreferPanic is a preference to PoR and PoRErr.
 	PreferPanic bool
@@ -64,19 +64,19 @@ func (c *CTX) Set(key string, value interface{}) {
 	c.kv[key] = value
 }
 
-// CreateGRPCContext create a context.Context with header "trace_id".
+// CreateGRPCContext create a context.Context with header "tid".
 func (c *CTX) CreateGRPCContext() context.Context {
 	ctx := context.Background()
 	return c.FillGRPCContext(ctx)
 }
 
-// FillGRPCContext append "trace_id" to context.Context .
+// FillGRPCContext append "tid" to context.Context .
 func (c *CTX) FillGRPCContext(context context.Context) context.Context {
 	return ContextByAppendingTraceID(context, c.traceID)
 }
 
 func ContextByAppendingTraceID(context context.Context, traceID string) context.Context {
-	context = metadata.AppendToOutgoingContext(context, "trace_id", traceID)
+	context = metadata.AppendToOutgoingContext(context, "tid", traceID)
 	return context
 }
 
@@ -86,7 +86,7 @@ func ContextByAppendingTraceID(context context.Context, traceID string) context.
 //	return out
 //}
 
-// TraceIDFromOutgoing extract TraceID from context. return "" if not found.
+// TraceIDFromOutgoing extract tid from context. return "" if not found.
 func TraceIDFromOutgoing(context context.Context) string {
 	md, ok := metadata.FromOutgoingContext(context)
 	if ok {
@@ -95,7 +95,7 @@ func TraceIDFromOutgoing(context context.Context) string {
 	return ""
 }
 
-// TraceIDFromIncoming extract TraceID from context. return "" if not found.
+// TraceIDFromIncoming extract tid from context. return "" if not found.
 func TraceIDFromIncoming(context context.Context) string {
 	md, ok := metadata.FromIncomingContext(context)
 	if ok {
@@ -105,7 +105,7 @@ func TraceIDFromIncoming(context context.Context) string {
 }
 
 func TraceIDFromMD(md metadata.MD) string {
-	traceID := md.Get("trace_id")
+	traceID := md.Get("tid")
 	if len(traceID) > 0 {
 		return traceID[0]
 	}

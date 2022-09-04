@@ -2,6 +2,7 @@ package u
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -397,4 +398,22 @@ func handlePanic(c *gin.Context) {
 func (r *GinHelper) CreateGRPCContext() context.Context {
 	context := context.Background()
 	return getCTX(r.Context).FillGRPCContext(context)
+}
+
+func GetJWTClaims(c *gin.Context, claimsPointer any) {
+	tokenString := strings.TrimPrefix(strings.ToLower(c.GetHeader("Authorization")), "bearer")
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		panic(ErrInvalidJWT("Invalid JWT."))
+	}
+
+	claimBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		panic(ErrInvalidJWT(err))
+	}
+
+	err = json.Unmarshal(claimBytes, claimsPointer)
+	if err != nil {
+		panic(ErrInvalidJWT(err))
+	}
 }

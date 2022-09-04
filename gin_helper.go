@@ -17,7 +17,7 @@ const TraceIDKey = "TID"
 
 func traceIDForGinCreateIfNil(c *gin.Context) (traceID string) {
 	if c == nil {
-		return "gin.Context_must_not_be_nil!"
+		return "gin_Context_must_not_be_nil!"
 	}
 	value, ok := c.Get(TraceIDKey)
 	needCreate := false
@@ -48,19 +48,56 @@ func traceIDFromGin(c *gin.Context) (traceID string) {
 // GinHelper provides some helper functions. Respond JSON only.
 type GinHelper struct {
 	*gin.Context
-	ctx *CTX
+	//ctx *CTX
 }
 
-func NewGinHelper(c *gin.Context) GinHelper {
-	traceID := traceIDForGinCreateIfNil(c)
-	return GinHelper{
-		Context: c,
-		ctx:     NewCTXWithTraceID(traceID),
+//var g = GinHelper{}
+//
+//func G() GinHelper {
+//	return g
+//}
+
+func GinMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		injectCTX(c)
+		defer handlePanic(c)
+		c.Next()
 	}
 }
 
-func (h GinHelper) Ctx() *CTX {
-	return h.ctx
+func injectCTX(c *gin.Context) *CTX {
+	if _, ok := c.Get("ctx"); ok {
+		return nil
+	}
+
+	ctx := &CTX{
+		traceID: UUID12(),
+	}
+	c.Set("ctx", ctx)
+
+	return ctx
+}
+
+func getCTX(c *gin.Context) *CTX {
+	if v, ok := c.Get("ctx"); ok {
+		if ctx, ok := v.(*CTX); ok {
+			return ctx
+		}
+	}
+
+	return injectCTX(c)
+}
+
+func NewGinHelper(c *gin.Context) *GinHelper {
+	//traceID := traceIDForGinCreateIfNil(c)
+	return &GinHelper{
+		Context: c,
+		//ctx:     NewCTXWithTraceID(traceID),
+	}
+}
+
+func (r *GinHelper) CTX() *CTX {
+	return getCTX(r.Context)
 }
 
 type ErrorPayload struct {
@@ -90,13 +127,13 @@ func commonResponseBody() map[string]interface{} {
 
 // MustBind binds parameters to obj which must be a pointer. If any error occurred, respond 400.
 // return true if binding succeed, vice versa.
-func (h GinHelper) MustBind(obj interface{}) bool {
-	if err := h.BindUri(obj); err != nil {
-		h.RespondError(ErrParamBindingErr(err))
+func (r *GinHelper) MustBind(obj interface{}) bool {
+	if err := r.BindUri(obj); err != nil {
+		r.RespondError(ErrParamBindingErr(err))
 		return false
 	}
-	if err := h.ShouldBind(obj); err != nil {
-		h.RespondError(ErrParamBindingErr(err))
+	if err := r.ShouldBind(obj); err != nil {
+		r.RespondError(ErrParamBindingErr(err))
 		return false
 	}
 	return true
@@ -104,10 +141,10 @@ func (h GinHelper) MustBind(obj interface{}) bool {
 
 // Bind Deprecated. binds parameters to obj which must be a pointer. If any error occurred, respond 400.
 // return true if binding succeed, vice versa.
-func (h GinHelper) Bind(obj interface{}) bool {
-	_ = h.ShouldBindUri(obj)
-	if err := h.ShouldBind(obj); err != nil {
-		h.RespondError(ErrParamBindingErr(err))
+func (r *GinHelper) Bind(obj interface{}) bool {
+	_ = r.ShouldBindUri(obj)
+	if err := r.ShouldBind(obj); err != nil {
+		r.RespondError(ErrParamBindingErr(err))
 		return false
 	}
 	return true
@@ -121,7 +158,7 @@ func respondJSON(c *gin.Context, status int, body interface{}) {
 	c.JSON(status, body)
 }
 
-// Respond Example: playload1 is {k: "msg" v: "ok"} and payload2 is {k: "data" v:{id: 1}}.
+// Respond Example: payload 1 is {k: "msg" v: "ok"}; payload 2 is {k: "data" v:{id: 1}}.
 // Response JSON will be
 //
 //	{
@@ -131,17 +168,17 @@ func respondJSON(c *gin.Context, status int, body interface{}) {
 //			"id": 1
 //		}
 //	}
-func (h GinHelper) Respond(status int, payload KV) {
+func (r *GinHelper) Respond(status int, payload KV) {
 	body := commonResponseBody()
 	for k, v := range payload {
 		body[k] = v
 	}
-	respondJSON(h.Context, status, body)
+	respondJSON(r.Context, status, body)
 }
 
 // respondError respond custom status code with error in the response JSON
-func (h GinHelper) RespondError(erro ErrorType) {
-	respondError(h.Context, erro)
+func (r *GinHelper) RespondError(erro ErrorType) {
+	respondError(r.Context, erro)
 }
 
 // respondError respond custom status code with error in the response JSON
@@ -161,9 +198,10 @@ func respondError(gc *gin.Context, erro ErrorType) {
 	// If panicked, respondError will recover once, create an internalError object and call respondError with the new erro object.
 	// If panicked again, respondError will give up. let http.serve() recover.
 	defer func() {
-		if reflect.TypeOf(erro).Name() == "u_internalError" {
-			// We are here only because first recovery panicked.
-			// Even below lines still panic. http.serve() will recover. Thus, service won't crash.
+		_, ok := gc.Get("respondErrorFailure")
+		if ok {
+			// We are here only because recovery below panicked.
+			// If code panicked again. Process won't crash because http.serve() will recover.
 			Errorf("[%s] respondError panicked twice. erro={type=%T; value=%v}", traceIDFromGin(gc), erro, erro)
 			gc.Abort()
 			return
@@ -172,6 +210,7 @@ func respondError(gc *gin.Context, erro ErrorType) {
 		if err := recover(); err != nil {
 			// err could be (*ErrorType, nil)
 			// So create a solid ErrorType object
+			gc.Set("respondErrorFailure", true)
 			e := ErrInternalError(fmt.Sprintf("Unparseable error. type=%T; value=%v", erro, erro))
 			respondError(gc, e)
 		}
@@ -186,13 +225,13 @@ func respondError(gc *gin.Context, erro ErrorType) {
 	payload.TID = traceIDForGinCreateIfNil(gc)
 	body[errorKey] = payload
 
-	if erro.Extra() != NotWorthLogging {
+	if erro.Extra() != &notWorthLogging {
 		// get raw string of http request using reflect.
 		requestLog := requestAsText(gc.Request)
 
 		log := fmt.Sprintf("tid=%v; %scode=%v; error=%v; status=%v", payload.TID, requestLog, erro.ErrorCode(), erro.Error(), erro.StatusCode())
 
-		if erro.StatusCode() >= 500 && erro.Extra() != PrintErrAsInfo {
+		if erro.StatusCode() >= 500 && erro.Extra() != &printErrAsInfo {
 			Error(log)
 		} else {
 			Info(log)
@@ -201,6 +240,8 @@ func respondError(gc *gin.Context, erro ErrorType) {
 
 	respondJSON(gc, erro.StatusCode(), body)
 }
+
+var MaxLengthOfRequestDump = 4 * 1024
 
 func requestAsText(request *http.Request) (requestLog string) {
 	if request.ContentLength > 0 && request.Body != nil {
@@ -214,6 +255,11 @@ func requestAsText(request *http.Request) (requestLog string) {
 		v = v.FieldByName("buf")
 		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
 		buf, ok := v.Interface().([]byte)
+
+		if length > MaxLengthOfRequestDump {
+			length = MaxLengthOfRequestDump
+		}
+
 		if ok {
 			requestLog = fmt.Sprintf("request=\n%s\n---EOR---\n", string(buf[:length]))
 		}
@@ -237,37 +283,37 @@ func requestAsText(request *http.Request) (requestLog string) {
 
 // RespondKV caller provides one object/array/slice and error, nil if no error.
 // Function will make response properly.
-func (h GinHelper) RespondKV(successStatusCode int, key string, value interface{}, erro ErrorType) {
+func (r *GinHelper) RespondKV(successStatusCode int, key string, value interface{}, erro ErrorType) {
 	if erro != nil {
-		h.RespondError(erro)
+		r.RespondError(erro)
 		return
 	}
-	h.Respond(successStatusCode, KV{key: value})
+	r.Respond(successStatusCode, KV{key: value})
 }
 
-func (h GinHelper) RespondKV200(key string, value interface{}, erro ErrorType) {
-	h.RespondKV(200, key, value, erro)
+func (r *GinHelper) RespondKV200(key string, value interface{}, erro ErrorType) {
+	r.RespondKV(200, key, value, erro)
 }
 
 // RespondKVs caller provides multiple KV objects and error, nil if no error.
 // Function will make response properly.
-func (h GinHelper) RespondKVs(successStatusCode int, erro ErrorType, payload KV) {
+func (r *GinHelper) RespondKVs(successStatusCode int, erro ErrorType, payload KV) {
 	if erro != nil {
-		h.RespondError(erro)
+		r.RespondError(erro)
 		return
 	}
-	h.Respond(successStatusCode, payload)
+	r.Respond(successStatusCode, payload)
 }
 
-func (h GinHelper) RespondKVs200(erro ErrorType, payload KV) {
-	h.RespondKVs(200, erro, payload)
+func (r *GinHelper) RespondKVs200(erro ErrorType, payload KV) {
+	r.RespondKVs(200, erro, payload)
 }
 
 // RespondFirst caller provide an slice/array. Only the first element if exists will be in the response JSON.
 // todo generic
-func (h GinHelper) RespondFirst(successStatusCode int, key string, values interface{}, erro ErrorType) {
+func (r *GinHelper) RespondFirst(successStatusCode int, key string, values interface{}, erro ErrorType) {
 	if erro != nil {
-		h.RespondError(erro)
+		r.RespondError(erro)
 		return
 	}
 	//todo 等范型推出后，删除反射代码。
@@ -276,32 +322,32 @@ func (h GinHelper) RespondFirst(successStatusCode int, key string, values interf
 	}
 	s := reflect.ValueOf(values)
 	if s.Len() > 0 {
-		h.Respond(successStatusCode, KV{key: s.Index(0).Interface()})
+		r.Respond(successStatusCode, KV{key: s.Index(0).Interface()})
 	} else {
-		h.Respond(successStatusCode, KV{key: nil})
+		r.Respond(successStatusCode, KV{key: nil})
 	}
 }
 
-func (h GinHelper) RespondFirst200(key string, values interface{}, erro ErrorType) {
-	h.RespondFirst(200, key, values, erro)
+func (r *GinHelper) RespondFirst200(key string, values interface{}, erro ErrorType) {
+	r.RespondFirst(200, key, values, erro)
 }
 
 // RespondErrorElse if error is not nil, respond error.StatusCode() and error in the response JSON;
 // Otherwise, respond successStatusCode and error: null in the response JSON
-func (h GinHelper) RespondErrorElse(successStatusCode int, erro ErrorType) {
+func (r *GinHelper) RespondErrorElse(successStatusCode int, erro ErrorType) {
 	if erro != nil {
-		h.RespondError(erro)
+		r.RespondError(erro)
 		return
 	}
-	h.Respond(successStatusCode, nil)
+	r.Respond(successStatusCode, nil)
 }
 
-func (h GinHelper) RespondErrorElse200(erro ErrorType) {
-	h.RespondErrorElse(200, erro)
+func (r *GinHelper) RespondErrorElse200(erro ErrorType) {
+	r.RespondErrorElse(200, erro)
 }
 
-func (h GinHelper) BodyAsJSONMap() (m map[string]interface{}, erro ErrorType) {
-	bytes, err := io.ReadAll(h.Request.Body)
+func (r *GinHelper) UnmarshalJSONToMap() (m map[string]interface{}, erro ErrorType) {
+	bytes, err := io.ReadAll(r.Request.Body)
 	if err != nil {
 		return nil, ErrFailedToReadRequestBody(err)
 	}
@@ -312,8 +358,8 @@ func (h GinHelper) BodyAsJSONMap() (m map[string]interface{}, erro ErrorType) {
 	return m, nil
 }
 
-func (h GinHelper) BodyAsJSONSlice() (s []map[string]interface{}, erro ErrorType) {
-	bytes, err := io.ReadAll(h.Request.Body)
+func (r *GinHelper) BodyAsJSONSlice() (s []map[string]interface{}, erro ErrorType) {
+	bytes, err := io.ReadAll(r.Request.Body)
 	if err != nil {
 		return nil, ErrFailedToReadRequestBody(err)
 	}
@@ -324,13 +370,13 @@ func (h GinHelper) BodyAsJSONSlice() (s []map[string]interface{}, erro ErrorType
 	return s, nil
 }
 
-func G(handle func(h GinHelper)) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		defer handlePanic(context)
-		h := NewGinHelper(context)
-		handle(h)
-	}
-}
+//func G(handle func(h *GinHelper)) gin.HandlerFunc {
+//	return func(context *gin.Context) {
+//		defer handlePanic(context)
+//		h := NewGinHelper(context)
+//		handle(h)
+//	}
+//}
 
 func handlePanic(c *gin.Context) {
 	if err := recover(); err != nil {
@@ -348,7 +394,7 @@ func handlePanic(c *gin.Context) {
 }
 
 // CreateGRPCContext create a context.Context with header "tid".
-func (h GinHelper) CreateGRPCContext() context.Context {
+func (r *GinHelper) CreateGRPCContext() context.Context {
 	context := context.Background()
-	return h.Ctx().FillGRPCContext(context)
+	return getCTX(r.Context).FillGRPCContext(context)
 }

@@ -16,6 +16,8 @@ import (
 
 type consoleColorModeValue int
 
+var SlowGinRequestLatencyThreshold = time.Second
+
 const (
 	autoColor consoleColorModeValue = iota
 	disableColor
@@ -25,7 +27,7 @@ const (
 const (
 	green   = "\033[97;42m"
 	white   = "\033[90;47m"
-	yellow  = "\033[90;43m"
+	yellow  = "\033[97;43m"
 	red     = "\033[97;41m"
 	blue    = "\033[97;44m"
 	magenta = "\033[97;45m"
@@ -44,7 +46,7 @@ type LoggerConfig struct {
 	// Optional. Default value is gin.DefaultWriter.
 	Output io.Writer
 
-	// SkipPaths is a url path array which logs are not written.
+	// SkipPaths is an url path array which logs are not written.
 	// Optional.
 	SkipPaths []string
 }
@@ -62,7 +64,7 @@ type LogFormatterParams struct {
 	StatusCode int
 	// Latency is how much time the server cost to process a certain request.
 	Latency time.Duration
-	// ClientIP equals CTX's ClientIP method.
+	// ClientIP equals context's ClientIP method.
 	ClientIP string
 	// Method is the HTTP method given to the request.
 	Method string
@@ -70,7 +72,7 @@ type LogFormatterParams struct {
 	Path string
 	// ErrorMessage is set if error has occurred in processing the request.
 	ErrorMessage string
-	// isTerm shows whether does gin's output descriptor refers to a terminal.
+	// isTerm shows whether it does gin's output descriptor refers to a terminal.
 	isTerm bool
 	// BodySize is the size of the Response Body
 	BodySize int
@@ -143,9 +145,16 @@ var defaultLogFormatter = func(param LogFormatterParams) string {
 		// Truncate in a golang < 1.8 safe way
 		param.Latency = param.Latency - param.Latency%time.Second
 	}
-	return fmt.Sprintf("%v [GIN][%s] |%s %3d %s| %13v | %15s |%s %-7s %s %#v\n%s",
+
+	var slowTag string
+	if param.Latency > SlowGinRequestLatencyThreshold {
+		slowTag = fmt.Sprintf("%s[SLOW]%s", magenta, reset)
+	}
+
+	return fmt.Sprintf("%v [GIN][%s]%s |%s %3d %s| %13v | %15s |%s %-7s %s %#v\n%s",
 		param.TimeStamp.Format("2006/01/02 15:04:05"),
 		param.traceID,
+		slowTag,
 		statusColor, param.StatusCode, resetColor,
 		param.Latency,
 		param.ClientIP,
@@ -181,7 +190,7 @@ func ErrorLoggerT(typ gin.ErrorType) gin.HandlerFunc {
 	}
 }
 
-// Logger instances a Logger middleware that will write the logs to gin.DefaultWriter.
+// GinLogger instances a Logger middleware that will write the logs to gin.DefaultWriter.
 // By default gin.DefaultWriter = os.Stdout.
 func GinLogger() gin.HandlerFunc {
 	return LoggerWithConfig(LoggerConfig{})
@@ -255,6 +264,11 @@ func LoggerWithConfig(conf LoggerConfig) gin.HandlerFunc {
 			// Stop timer
 			param.TimeStamp = time.Now()
 			param.Latency = param.TimeStamp.Sub(start)
+
+			if gin.Mode() == gin.ReleaseMode && param.Latency < SlowGinRequestLatencyThreshold {
+				c.Next()
+				return
+			}
 
 			param.ClientIP = c.ClientIP()
 			param.Method = c.Request.Method

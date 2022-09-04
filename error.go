@@ -4,8 +4,8 @@ import "github.com/SimpleFelix/esg"
 
 type ErrorType = esg.ErrorType
 
-const NotWorthLogging = "NotWorthLogging"
-const PrintErrAsInfo = "PrintErrAsInfo"
+var notWorthLogging byte
+var printErrAsInfo byte
 
 // TryConvertToErrorType returns a ErrorType if err is a ErrorType. returns nil if not
 func TryConvertToErrorType(err interface{}) ErrorType {
@@ -16,10 +16,10 @@ func TryConvertToErrorType(err interface{}) ErrorType {
 	return nil
 }
 
-func ErrModNoNeedLog(erro esg.ErrorTypeWriteable) {
-	erro.SetExtra(NotWorthLogging)
+func ErrModNoNeedToLog(erro esg.ErrorTypeWriteable) {
+	erro.SetExtra(&notWorthLogging)
 }
 
 func ErrModPrintAsInfo(erro esg.ErrorTypeWriteable) {
-	erro.SetExtra(PrintErrAsInfo)
+	erro.SetExtra(&printErrAsInfo)
 }

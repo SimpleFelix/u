@@ -265,7 +265,7 @@ func LoggerWithConfig(conf LoggerConfig) gin.HandlerFunc {
 			param.TimeStamp = time.Now()
 			param.Latency = param.TimeStamp.Sub(start)
 
-			if gin.Mode() == gin.ReleaseMode && param.Latency < SlowGinRequestLatencyThreshold {
+			if !gin.IsDebugging() && param.Latency < SlowGinRequestLatencyThreshold {
 				c.Next()
 				return
 			}

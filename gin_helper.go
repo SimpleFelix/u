@@ -226,16 +226,16 @@ func respondError(gc *gin.Context, erro ErrorType) {
 	payload.TID = traceIDForGinCreateIfNil(gc)
 	body[errorKey] = payload
 
-	if erro.Extra() != &notWorthLogging {
+	if gin.IsDebugging() || (erro.Extra() != &notWorthLogging && erro.StatusCode() >= 500) {
 		// get raw string of http request using reflect.
 		requestLog := requestAsText(gc.Request)
 
 		log := fmt.Sprintf("tid=%v; %scode=%v; error=%v; status=%v", payload.TID, requestLog, erro.ErrorCode(), erro.Error(), erro.StatusCode())
 
-		if erro.StatusCode() >= 500 && erro.Extra() != &printErrAsInfo {
-			Error(log)
-		} else {
+		if erro.Extra() == &printErrAsInfo {
 			Info(log)
+		} else {
+			Error(log)
 		}
 	}
 
@@ -275,7 +275,7 @@ func requestAsText(request *http.Request) (requestLog string) {
 		requestLog = fmt.Sprintf(`request=
 %s %s
 %v
----EOR--
+---EOR---
 `, request.Method, request.RequestURI, strings.Join(headers, "\n"))
 	}
 
@@ -352,11 +352,18 @@ func (r *GinHelper) UnmarshalJSONToMap() (m map[string]interface{}, erro ErrorTy
 	if err != nil {
 		return nil, ErrFailedToReadRequestBody(err)
 	}
+
+	if len(bytes) == 0 {
+		m = map[string]interface{}{}
+		return
+	}
+
 	err = json.Unmarshal(bytes, &m)
 	if err != nil {
 		return nil, ErrFailedToUnmarshalJSON(err)
 	}
-	return m, nil
+
+	return
 }
 
 func (r *GinHelper) BodyAsJSONSlice() (s []map[string]interface{}, erro ErrorType) {
@@ -401,7 +408,13 @@ func (r *GinHelper) CreateGRPCContext() context.Context {
 }
 
 func GetJWTClaims(c *gin.Context, claimsPointer any) {
-	tokenString := strings.TrimPrefix(strings.ToLower(c.GetHeader("Authorization")), "bearer")
+	a := c.GetHeader("Authorization")
+	//if !strings.HasPrefix(strings.ToLower(a), "Bearer ") {
+	if !strings.HasPrefix(a, "Bearer ") {
+		panic(ErrInvalidJWT("Invalid JWT."))
+	}
+
+	tokenString := a[7:]
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
 		panic(ErrInvalidJWT("Invalid JWT."))

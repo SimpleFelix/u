@@ -430,3 +430,24 @@ func GetJWTClaims(c *gin.Context, claimsPointer any) {
 		panic(ErrInvalidJWT(err))
 	}
 }
+
+func GetJWTMapClaims(c *gin.Context) map[string]any {
+	claims := map[string]any{}
+	GetJWTClaims(c, &claims)
+	return claims
+}
+
+func OverwrittenByJWT(c *gin.Context, mapping map[string]string, json map[string]any) {
+	if len(mapping) == 0 || json == nil {
+		return
+	}
+	claims := GetJWTMapClaims(c)
+
+	if len(claims) == 0 {
+		return
+	}
+
+	for js, jw := range mapping {
+		json[js] = claims[jw]
+	}
+}

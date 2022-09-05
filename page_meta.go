@@ -20,8 +20,11 @@ type PageMeta struct {
 	// 匹配条件
 	Match map[string]interface{} `json:"match,omitempty" form:"match" bson:"match"`
 
-	// 模糊搜索条件
+	// 全文模糊搜索条件
 	Search map[string]interface{} `json:"search,omitempty" form:"search" bson:"search"`
+
+	// 全文模糊搜索文本
+	SearchText string `json:"search_text,omitempty" form:"search_text" bson:"search_text"`
 
 	// 总共（约）有多少条记录。仅作为返回值。
 	Total *int64 `json:"total,omitempty" form:"total" bson:"total"`

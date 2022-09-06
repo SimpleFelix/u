@@ -250,6 +250,12 @@ func LoggerWithConfig(conf LoggerConfig) gin.HandlerFunc {
 		raw := c.Request.URL.RawQuery
 
 		traceID := traceIDForGinCreateIfNil(c)
+
+		if gin.IsDebugging() {
+			requestText := requestAsText(c.Request)
+			Debugf("RCV %s", requestText)
+		}
+
 		// Process request
 		c.Next()
 
@@ -266,7 +272,6 @@ func LoggerWithConfig(conf LoggerConfig) gin.HandlerFunc {
 			param.Latency = param.TimeStamp.Sub(start)
 
 			if !gin.IsDebugging() && param.Latency < SlowGinRequestLatencyThreshold {
-				c.Next()
 				return
 			}
 

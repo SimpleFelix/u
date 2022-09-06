@@ -262,7 +262,7 @@ func requestAsText(request *http.Request) (requestLog string) {
 		}
 
 		if ok {
-			requestLog = fmt.Sprintf("request=\n%s\n---EOR---\n", string(buf[:length]))
+			requestLog = fmt.Sprintf("request:\n%s\n---EOR---\n", string(buf[:length]))
 		}
 	} else {
 		// assemble headers
@@ -272,7 +272,7 @@ func requestAsText(request *http.Request) (requestLog string) {
 				headers = append(headers, k+": "+v)
 			}
 		}
-		requestLog = fmt.Sprintf(`request=
+		requestLog = fmt.Sprintf(`request:
 %s %s
 %v
 ---EOR---
@@ -448,6 +448,8 @@ func OverwrittenByJWT(c *gin.Context, mapping map[string]string, json map[string
 	}
 
 	for js, jw := range mapping {
-		json[js] = claims[jw]
+		if w, ok := claims[jw]; ok {
+			json[js] = w
+		}
 	}
 }

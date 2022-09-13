@@ -6,7 +6,7 @@ import "fmt"
 
 type Conflict struct {
 	_extra_ interface{}
-	err interface{}
+	err     interface{}
 }
 
 // ErrorCode change it as you prefer.
@@ -19,7 +19,7 @@ func (e Conflict) ErrorCode() interface{} {
 // For example, if the error is caused by bad request, then change the return value to 400.
 // Ignore this function if no need for your project.
 func (e Conflict) StatusCode() int {
-	return 500
+	return 409
 }
 
 // Extra returns _extra_ which can be set by user. Usage of _extra_ is determined by user.

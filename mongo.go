@@ -26,8 +26,8 @@ func MustSetupMongoCollection(mongoDB *mongo.Database, name string, validator bs
 			{"collMod", name},
 			{"validator", validator},
 		})
-		if result.Err() != nil {
-			Panic(ErrMongoWriteErr(result.Err()))
+		if err := result.Err(); err != nil {
+			Panic(ErrMongoWriteErr(err))
 		}
 
 		// create indexes is an idempotent operation.
